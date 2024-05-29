@@ -67,6 +67,8 @@ insert into orderDetails values
 (1,'P001',3,0.1)
 insert into orderDetails values
 (1,'P002',5,0.15)
+insert into orderDetails values
+(1,'P003',2,0.2)
 
 
 select * from Employees
@@ -197,3 +199,136 @@ from productsOfOrder_(1)
 
 
 -- 04
+create type OrdList
+as table
+(
+	productId char(4),
+	qty int,
+	discount real
+)
+
+go
+
+create proc insertToOrder
+@cid char(4),
+@cname varchar(50),
+@cPhone char(10),
+@cCountry varchar(20),
+@oid int,
+@eid char(4),
+@ordDate date,
+@reqDate date,
+@ordDetails as OrdList readonly
+as
+begin
+	begin transaction
+
+	if not exists(select * from Customers where cid = @cid) and 
+	   exists(select * from Employees where eid = @eid) 
+	begin
+		insert into Customers values(@cid,@cname,@cPhone,@cCountry)
+		if @@ROWCOUNT = 0 goto myErrorHandel
+		insert into Orders values(@oid,@eid,@cid,@ordDate,@reqDate,null,null)
+		if @@ROWCOUNT = 0 goto myErrorHandel
+
+		declare myCursor Cursor
+		for
+		select productId, qty, discount 
+		from @ordDetails
+
+		declare @pid char(4), @qty int, @dis real
+
+		open myCursor
+		fetch next from myCursor into @pid, @qty, @dis
+		while @@FETCH_STATUS = 0
+		begin
+			insert into orderDetails values(@oid, @pid, @qty, @dis)
+			if @@ROWCOUNT = 0 goto myErrorHandel
+			fetch next from myCursor into @pid, @qty, @dis
+		end
+
+	end
+	else
+	begin
+		goto myErrorHandel
+	end
+
+	commit transaction
+	return 0
+
+	myErrorHandel:
+		rollback transaction
+		print 'transaction failed...'
+		return -1
+
+end
+
+declare @list OrdList
+insert into @list values
+('P001',2,0.1),
+('P002',3,0.15)
+
+exec insertToOrder 'C004','Aruni','0778665447','Sri Lanka',2,'E002','12-Aug-2020','15-Aug-2020',@list
+
+
+
+select * from Employees
+select * from Customers
+select * from Orders
+select * from orderDetails
+select * from Products
+
+
+
+
+
+
+
+
+
+-- 05
+
+alter trigger updateCost
+on orderDetails
+after insert, update
+as
+begin
+	declare @oid int, @cost real
+	select @oid=oid from inserted
+	--if @oid is null
+	--begin
+	--	select @oid=oid from deleted
+	--end
+	exec @cost=calcCost @oid
+	update Orders set cost=@cost where oid=@oid
+
+end
+
+create trigger updateCost_
+on orderDetails
+after delete
+as
+begin
+	declare @oid int, @cost real
+	select @oid=oid from deleted
+	exec @cost=calcCost @oid
+	update Orders set cost=@cost where oid=@oid
+
+end
+
+
+
+
+insert into orderDetails values
+(1,'P001',3,0.1)
+insert into orderDetails values
+(1,'P002',5,0.15)
+insert into orderDetails values
+(1,'P003',2,0.2)
+
+delete from orderDetails where oid=1
+
+select * from orderDetails
+select * from Orders
+
+
